@@ -22,7 +22,10 @@ export default async function NewRequirementPage({
             "Domain",
             <input name="domain" required className={inputClass} placeholder="AI/ML, Web Dev, Robotics..." />
           )}
-          {formField("Event date", <input name="event_date" type="date" className={inputClass} />)}
+          <div className="grid grid-cols-2 gap-4">
+            {formField("Start date", <input name="start_date" type="date" className={inputClass} />)}
+            {formField("End date", <input name="end_date" type="date" className={inputClass} />)}
+          </div>
           {formField(
             "Sponsorship needed",
             <input name="sponsorship_needed" className={inputClass} placeholder="Cash, goodies, venue..." />

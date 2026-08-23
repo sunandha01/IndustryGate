@@ -1,5 +1,6 @@
 export type UserRole = "student" | "faculty";
 export type RequirementStatus = "open" | "fulfilled" | "closed";
+export type RequestStatus = "sent" | "accepted" | "rejected";
 
 export interface Profile {
   id: string;
@@ -32,23 +33,15 @@ export interface IndustryProfile {
   created_at: string;
 }
 
-export interface IndustryPastEvent {
-  id: string;
-  industry_id: string;
-  event_name: string;
-  event_date: string | null;
-  organization: string | null;
-  role: string | null;
-  created_at: string;
-}
-
 export interface IndustryRequest {
   id: string;
   industry_id: string;
   logged_by: string;
   domain: string;
+  event_name: string | null;
   amount: number | null;
   notes: string | null;
+  status: RequestStatus;
   created_at: string;
 }
 
@@ -56,11 +49,13 @@ export interface PastEvent {
   id: string;
   posted_by: string;
   name: string;
-  event_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
   domain: string;
   prize_pool: number | null;
   sponsorship_details: string | null;
   industry_id: string | null;
+  industry_role: string | null;
   industry_person_name: string | null;
   industry_company: string | null;
   notes: string | null;
@@ -71,12 +66,14 @@ export interface Requirement {
   id: string;
   posted_by: string;
   domain: string;
-  event_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
   sponsorship_needed: string | null;
   prize_pool: number | null;
   offer_amount: number | null;
   description: string | null;
   status: RequirementStatus;
+  fulfilled_by: string | null;
   created_at: string;
 }
 

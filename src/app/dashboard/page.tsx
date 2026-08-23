@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Badge, Card, EmptyState, PageHeader, money } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader, dateRange, money } from "@/components/ui";
 import type { PastEvent, Requirement } from "@/lib/types";
 
 type FeedItem =
@@ -30,7 +30,25 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Feed" />
+      <PageHeader
+        title="Feed"
+        action={
+          <div className="flex gap-2">
+            <Link
+              href="/events/new"
+              className="bg-white border border-srm-navy text-srm-navy text-sm font-medium px-4 py-2 rounded-md hover:bg-srm-navy hover:text-white transition-colors"
+            >
+              Log a past event
+            </Link>
+            <Link
+              href="/requirements/new"
+              className="bg-srm-navy text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-srm-navy-dark transition-colors"
+            >
+              Post a requirement
+            </Link>
+          </div>
+        }
+      />
 
       {feed.length === 0 && (
         <EmptyState message="Nothing posted yet. Be the first to log a past event or a requirement." />
@@ -48,7 +66,7 @@ export default async function DashboardPage() {
                     <p className="text-sm text-gray-600 mt-1">{item.data.description}</p>
                   )}
                   <p className="text-xs text-gray-400 mt-2">
-                    {item.data.event_date ?? "Date TBD"}
+                    {dateRange(item.data.start_date, item.data.end_date)}
                     {item.data.sponsorship_needed ? ` · needs ${item.data.sponsorship_needed}` : ""}
                   </p>
                 </div>
@@ -65,39 +83,32 @@ export default async function DashboardPage() {
               </div>
             </Card>
           ) : (
-            <Card key={`evt-${item.data.id}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <Badge>Past event</Badge>
-                  <h2 className="mt-2 font-semibold text-srm-navy">{item.data.name}</h2>
-                  <p className="text-sm text-gray-600 mt-1">{item.data.domain}</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    {item.data.event_date ?? "Date unknown"}
-                    {item.data.industry_person_name
-                      ? ` · with ${item.data.industry_person_name}${
-                          item.data.industry_company ? ` (${item.data.industry_company})` : ""
-                        }`
-                      : ""}
-                  </p>
+            <Link key={`evt-${item.data.id}`} href={`/events/${item.data.id}`}>
+              <Card>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Badge>Past event</Badge>
+                    <h2 className="mt-2 font-semibold text-srm-navy">{item.data.name}</h2>
+                    <p className="text-sm text-gray-600 mt-1">{item.data.domain}</p>
+                    <p className="text-xs text-gray-400 mt-2">
+                      {dateRange(item.data.start_date, item.data.end_date)}
+                      {item.data.industry_person_name
+                        ? ` · with ${item.data.industry_person_name}${
+                            item.data.industry_company ? ` (${item.data.industry_company})` : ""
+                          }`
+                        : ""}
+                    </p>
+                  </div>
+                  {money(item.data.prize_pool) && (
+                    <p className="text-sm font-semibold text-srm-navy shrink-0">
+                      {money(item.data.prize_pool)}
+                    </p>
+                  )}
                 </div>
-                {money(item.data.prize_pool) && (
-                  <p className="text-sm font-semibold text-srm-navy shrink-0">
-                    {money(item.data.prize_pool)}
-                  </p>
-                )}
-              </div>
-            </Card>
+              </Card>
+            </Link>
           )
         )}
-      </div>
-
-      <div className="flex gap-3 mt-8 text-sm">
-        <Link href="/events/new" className="text-srm-navy underline">
-          Log a past event
-        </Link>
-        <Link href="/requirements/new" className="text-srm-navy underline">
-          Post a requirement
-        </Link>
       </div>
     </div>
   );

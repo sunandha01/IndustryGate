@@ -16,7 +16,8 @@ export async function createRequirement(formData: FormData) {
   const { error } = await supabase.from("requirements").insert({
     posted_by: user.id,
     domain: String(formData.get("domain")),
-    event_date: (formData.get("event_date") as string) || null,
+    start_date: (formData.get("start_date") as string) || null,
+    end_date: (formData.get("end_date") as string) || null,
     sponsorship_needed: (formData.get("sponsorship_needed") as string) || null,
     prize_pool: numeric(formData.get("prize_pool")),
     offer_amount: numeric(formData.get("offer_amount")),

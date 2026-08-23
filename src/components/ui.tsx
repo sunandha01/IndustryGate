@@ -43,6 +43,12 @@ export function EmptyState({ message }: { message: string }) {
   );
 }
 
+export function dateRange(start: string | null, end: string | null) {
+  if (!start) return end ?? "Date TBD";
+  if (!end || end === start) return start;
+  return `${start} → ${end}`;
+}
+
 export function money(value: number | null | undefined) {
   if (value === null || value === undefined) return null;
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(

@@ -5,6 +5,7 @@ create extension if not exists "pgcrypto";
 
 create type user_role as enum ('student', 'faculty');
 create type requirement_status as enum ('open', 'fulfilled', 'closed');
+create type request_status as enum ('sent', 'accepted', 'rejected');
 
 -- ── Profiles (students & faculty) ──────────────────────────────────────────
 -- One row per auth.users row, created automatically by handle_new_user().
@@ -40,24 +41,17 @@ create table industry_profiles (
   created_at timestamptz not null default now()
 );
 
-create table industry_past_events (
-  id uuid primary key default gen_random_uuid(),
-  industry_id uuid not null references industry_profiles (id) on delete cascade,
-  event_name text not null,
-  event_date date,
-  organization text,           -- college/company the event was held at
-  role text,                   -- e.g. judge, chief guest, sponsor
-  created_at timestamptz not null default now()
-);
-
--- Industry person's own ask, logged on their behalf by a student/faculty
+-- Industry person's own ask, logged on their behalf by a student/faculty.
+-- Accepting one mirrors it into `requirements` as a fulfilled post and emails them.
 create table industry_requests (
   id uuid primary key default gen_random_uuid(),
   industry_id uuid not null references industry_profiles (id) on delete cascade,
   logged_by uuid not null references profiles (id) on delete cascade,
   domain text not null,
+  event_name text,
   amount numeric,
   notes text,
+  status request_status not null default 'sent',
   created_at timestamptz not null default now()
 );
 
@@ -67,11 +61,13 @@ create table past_events (
   id uuid primary key default gen_random_uuid(),
   posted_by uuid not null references profiles (id) on delete cascade,
   name text not null,
-  event_date date,
+  start_date date,
+  end_date date,               -- events can run more than one day
   domain text not null,
   prize_pool numeric,
   sponsorship_details text,
   industry_id uuid references industry_profiles (id) on delete set null,
+  industry_role text,          -- judge / chief guest / sponsor
   industry_person_name text,   -- freeform fallback if not in the directory yet
   industry_company text,
   notes text,
@@ -83,12 +79,14 @@ create table requirements (
   id uuid primary key default gen_random_uuid(),
   posted_by uuid not null references profiles (id) on delete cascade,
   domain text not null,
-  event_date date,
+  start_date date,
+  end_date date,
   sponsorship_needed text,
   prize_pool numeric,
   offer_amount numeric,        -- what the college is offering the industry person
   description text,
   status requirement_status not null default 'open',
+  fulfilled_by uuid references industry_profiles (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -128,7 +126,9 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  if not exists (
+  -- auth.uid() is null for direct dashboard/SQL-editor edits (no app session) —
+  -- only guard against a logged-in student self-promoting through the app itself.
+  if auth.uid() is not null and not exists (
     select 1 from public.profiles where id = auth.uid() and role = 'faculty'
   ) then
     new.role := old.role;
@@ -163,7 +163,6 @@ $$;
 -- ── Row Level Security ──────────────────────────────────────────────────────
 alter table profiles enable row level security;
 alter table industry_profiles enable row level security;
-alter table industry_past_events enable row level security;
 alter table industry_requests enable row level security;
 alter table past_events enable row level security;
 alter table requirements enable row level security;
@@ -184,18 +183,6 @@ create policy "industry_profiles_update" on industry_profiles for update to auth
   using (added_by = auth.uid() or is_faculty());
 create policy "industry_profiles_delete" on industry_profiles for delete to authenticated
   using (added_by = auth.uid() or is_faculty());
-
-create policy "industry_past_events_select" on industry_past_events for select to authenticated using (true);
-create policy "industry_past_events_insert" on industry_past_events for insert to authenticated
-  with check (
-    can_post() and exists (
-      select 1 from industry_profiles ip where ip.id = industry_id and (ip.added_by = auth.uid() or is_faculty())
-    )
-  );
-create policy "industry_past_events_update" on industry_past_events for update to authenticated
-  using (exists (select 1 from industry_profiles ip where ip.id = industry_id and (ip.added_by = auth.uid() or is_faculty())));
-create policy "industry_past_events_delete" on industry_past_events for delete to authenticated
-  using (exists (select 1 from industry_profiles ip where ip.id = industry_id and (ip.added_by = auth.uid() or is_faculty())));
 
 create policy "industry_requests_select" on industry_requests for select to authenticated using (true);
 create policy "industry_requests_insert" on industry_requests for insert to authenticated
