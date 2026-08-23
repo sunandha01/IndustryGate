@@ -28,7 +28,10 @@ export default async function EditIndustryPage({
             {error}
           </p>
         )}
-        <form action={updateIndustryProfile.bind(null, id)} className="flex flex-col gap-4">
+        <form
+          action={updateIndustryProfile.bind(null, id, `/industry/${id}`)}
+          className="flex flex-col gap-4"
+        >
           {formField(
             "Full name",
             <input name="full_name" required defaultValue={profile.full_name} className={inputClass} />

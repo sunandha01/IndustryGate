@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { sendMagicLink } from "@/lib/actions/auth";
 
 export default async function LoginPage({
@@ -75,6 +76,13 @@ export default async function LoginPage({
             Send magic link
           </button>
         </form>
+
+        <p className="text-xs text-gray-400 text-center mt-6">
+          Industry professional?{" "}
+          <Link href="/industry-login" className="text-srm-navy underline">
+            Sign in here
+          </Link>
+        </p>
       </div>
     </div>
   );

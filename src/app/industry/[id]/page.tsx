@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge, Card, PageHeader, dateRange, formField, inputClass, money } from "@/components/ui";
 import type { IndustryProfile, IndustryRequest, PastEvent } from "@/lib/types";
-import { linkPastEvent, logIndustryRequest, setRequestStatus } from "@/app/industry/actions";
+import { linkPastEvent, logIndustryRequest } from "@/app/industry/actions";
 
 export default async function IndustryProfilePage({
   params,
@@ -162,25 +162,9 @@ export default async function IndustryProfilePage({
                   {ask.notes && <p className="text-sm text-gray-500 mt-1">{ask.notes}</p>}
                 </div>
 
+                {/* Answering is the professional's call, on their own profile. */}
                 {ask.status === "sent" && (
-                  <div className="flex gap-2 shrink-0">
-                    <form action={setRequestStatus.bind(null, ask.id, id, "accepted")}>
-                      <button
-                        type="submit"
-                        className="text-xs font-semibold px-3 py-1.5 rounded-md bg-srm-navy text-white hover:bg-srm-navy-dark transition-colors"
-                      >
-                        Accept
-                      </button>
-                    </form>
-                    <form action={setRequestStatus.bind(null, ask.id, id, "rejected")}>
-                      <button
-                        type="submit"
-                        className="text-xs font-semibold px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                      >
-                        Reject
-                      </button>
-                    </form>
-                  </div>
+                  <p className="text-xs text-gray-400 shrink-0">Awaiting their reply</p>
                 )}
               </div>
             </Card>

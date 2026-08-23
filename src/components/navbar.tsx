@@ -1,62 +1,68 @@
 import Image from "next/image";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import type { Profile } from "@/lib/types";
+import { getViewer } from "@/lib/viewer";
 import { signOut } from "@/lib/actions/auth";
 
-export default async function Navbar() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+const linkClass = "hover:text-srm-gold transition-colors";
 
-  let profile: Pick<Profile, "full_name" | "role"> | null = null;
-  if (user) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("full_name, role")
-      .eq("id", user.id)
-      .single();
-    profile = data as Pick<Profile, "full_name" | "role"> | null;
-  }
+export default async function Navbar() {
+  const viewer = await getViewer();
+
+  const home = viewer?.kind === "industry" ? "/mentor" : "/dashboard";
+  const displayName =
+    viewer && viewer.kind !== "orphan" ? viewer.profile.full_name : null;
+  const profileHref = viewer?.kind === "industry" ? "/mentor/profile" : "/profile";
 
   return (
     <header className="bg-srm-navy text-white sticky top-0 z-10 shadow-md">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-        <Link href="/dashboard" className="flex items-center gap-3 shrink-0">
+        <Link href={home} className="flex items-center gap-3 shrink-0">
           <Image src="/srm-seal.png" alt="SRM" width={36} height={36} />
           <span className="font-semibold text-sm sm:text-base leading-tight">
             Industry Mentor Portal
           </span>
         </Link>
 
-        {user && (
+        {viewer?.kind === "campus" && (
           <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
-            <Link href="/dashboard" className="hover:text-srm-gold transition-colors">
+            <Link href="/dashboard" className={linkClass}>
               Feed
             </Link>
-            <Link href="/events" className="hover:text-srm-gold transition-colors">
+            <Link href="/events" className={linkClass}>
               Past Events
             </Link>
-            <Link href="/requirements" className="hover:text-srm-gold transition-colors">
+            <Link href="/requirements" className={linkClass}>
               Requirements
             </Link>
-            <Link href="/industry" className="hover:text-srm-gold transition-colors">
+            <Link href="/industry" className={linkClass}>
               Industry Directory
             </Link>
-            {profile?.role === "faculty" && (
-              <Link href="/admin" className="hover:text-srm-gold transition-colors">
+            {viewer.profile.role === "faculty" && (
+              <Link href="/admin" className={linkClass}>
                 Manage Club Access
               </Link>
             )}
           </nav>
         )}
 
-        {user && (
-          <div className="flex items-center gap-3 shrink-0">
-            <Link href="/profile" className="text-sm hover:text-srm-gold transition-colors">
-              {profile?.full_name ?? user.email}
+        {viewer?.kind === "industry" && (
+          <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
+            <Link href="/mentor" className={linkClass}>
+              Feed
             </Link>
+            <Link href="/mentor/profile" className={linkClass}>
+              My Profile
+            </Link>
+          </nav>
+        )}
+
+        {viewer && (
+          <div className="flex items-center gap-3 shrink-0">
+            {displayName && (
+              <Link href={profileHref} className={`text-sm ${linkClass}`}>
+                {displayName}
+              </Link>
+            )}
             <form action={signOut}>
               <button
                 type="submit"

@@ -3,6 +3,10 @@
 //
 // Needs RESEND_API_KEY in .env.local. Without it, sends are skipped rather
 // than throwing — accepting a request must never fail just because email did.
+export function siteUrl() {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+}
+
 export async function sendEmail(to: string, subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { ok: false as const, error: "RESEND_API_KEY is not set" };

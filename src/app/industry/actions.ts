@@ -3,8 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sendEmail } from "@/lib/email";
-import type { IndustryProfile, IndustryRequest } from "@/lib/types";
+import { sendEmail, siteUrl } from "@/lib/email";
 
 const text = (value: FormDataEntryValue | null) => {
   const s = String(value ?? "").trim();
@@ -45,7 +44,13 @@ export async function createIndustryProfile(formData: FormData) {
   redirect("/industry");
 }
 
-export async function updateIndustryProfile(industryId: string, formData: FormData) {
+// `returnTo` differs by caller: faculty edit the directory entry, professionals
+// edit their own copy from /mentor and must land back there.
+export async function updateIndustryProfile(
+  industryId: string,
+  returnTo: string,
+  formData: FormData
+) {
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -65,10 +70,12 @@ export async function updateIndustryProfile(industryId: string, formData: FormDa
     .eq("id", industryId);
 
   if (error) {
-    redirect(`/industry/${industryId}/edit?error=` + encodeURIComponent(error.message));
+    const sep = returnTo.includes("?") ? "&" : "?";
+    redirect(`${returnTo}/edit${sep}error=` + encodeURIComponent(error.message));
   }
 
-  redirect(`/industry/${industryId}`);
+  revalidatePath(returnTo);
+  redirect(returnTo);
 }
 
 // Attach an already-logged past event to this contact, instead of retyping it.
@@ -97,103 +104,62 @@ export async function logIndustryRequest(industryId: string, formData: FormData)
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const domain = String(formData.get("domain"));
+  const eventName = text(formData.get("event_name"));
+  const amount = formData.get("amount") ? Number(formData.get("amount")) : null;
+  const notes = text(formData.get("notes"));
+
   const { error } = await supabase.from("industry_requests").insert({
     industry_id: industryId,
     logged_by: user.id,
-    domain: String(formData.get("domain")),
-    event_name: text(formData.get("event_name")),
-    amount: formData.get("amount") ? Number(formData.get("amount")) : null,
-    notes: text(formData.get("notes")),
+    domain,
+    event_name: eventName,
+    amount,
+    notes,
   });
 
   if (error) {
     redirect(`/industry/${industryId}?error=` + encodeURIComponent(error.message));
   }
 
-  revalidatePath(`/industry/${industryId}`);
-  redirect(`/industry/${industryId}`);
-}
-
-// Accepting mirrors the request into the feed as a fulfilled requirement and
-// emails the contact. Email failure is reported but never rolls back the accept.
-export async function setRequestStatus(
-  requestId: string,
-  industryId: string,
-  status: "accepted" | "rejected"
-) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: updated, error } = await supabase
-    .from("industry_requests")
-    .update({ status })
-    .eq("id", requestId)
-    .select("*")
-    .single();
-
-  if (error) {
-    redirect(`/industry/${industryId}?error=` + encodeURIComponent(error.message));
-  }
-
-  if (status !== "accepted") {
-    revalidatePath(`/industry/${industryId}`);
-    redirect(`/industry/${industryId}`);
-  }
-
-  const request = updated as IndustryRequest;
-
-  const { error: feedError } = await supabase.from("requirements").insert({
-    posted_by: user.id,
-    domain: request.domain,
-    offer_amount: request.amount,
-    description: request.event_name
-      ? `Confirmed for ${request.event_name}`
-      : "Confirmed from an industry request",
-    status: "fulfilled",
-    fulfilled_by: industryId,
-  });
-
-  if (feedError) {
-    redirect(`/industry/${industryId}?error=` + encodeURIComponent(feedError.message));
-  }
-
+  // Tell the professional they have been asked, and link them to the page
+  // where they can accept or decline. A failed email must not lose the request.
   const { data: contact } = await supabase
     .from("industry_profiles")
-    .select("*")
+    .select("full_name, email")
     .eq("id", industryId)
     .single();
-  const person = contact as IndustryProfile | null;
+  const person = contact as { full_name: string; email: string | null } | null;
 
-  let notice = "Request accepted.";
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .single();
+  const facultyName = (me as { full_name: string } | null)?.full_name ?? "SRM faculty";
+
+  let notice = "Request logged.";
   if (!person?.email) {
-    notice = "Request accepted. No email on file for this contact, so nothing was sent.";
+    notice = "Request logged. No email on file for this contact, so nothing was sent.";
   } else {
-    const eventLine = request.event_name
-      ? `<p>Event: <strong>${request.event_name}</strong></p>`
-      : "";
-    const amountLine =
-      request.amount !== null
-        ? `<p>Agreed amount: <strong>₹${request.amount}</strong></p>`
-        : "";
-
     const result = await sendEmail(
       person.email,
-      `SRM Industry Mentor Portal — your request has been accepted`,
+      `SRM invitation — ${eventName ?? domain}`,
       `<p>Dear ${person.full_name},</p>
-       <p>We are glad to confirm that SRM Institute of Science &amp; Technology has
-       accepted your request in the <strong>${request.domain}</strong> domain.</p>
-       ${eventLine}
-       ${amountLine}
-       <p>Our team will reach out shortly with the schedule and other details.</p>
+       <p>${facultyName} of SRM Institute of Science &amp; Technology would like to invite you
+       to take part in <strong>${eventName ?? `an event in the ${domain} domain`}</strong>.</p>
+       <p>Domain: <strong>${domain}</strong></p>
+       ${amount !== null ? `<p>Offered amount: <strong>₹${amount}</strong></p>` : ""}
+       ${notes ? `<p>${notes}</p>` : ""}
+       <p>You can accept or decline this invitation here:<br/>
+       <a href="${siteUrl()}/mentor/profile">${siteUrl()}/mentor/profile</a></p>
+       <p>Sign in with this email address to see the full details under “Requests”.</p>
        <p>Warm regards,<br/>SRM Industry Mentor Portal</p>`
     );
 
     notice = result.ok
-      ? `Request accepted and email sent to ${person.email}.`
-      : `Request accepted, but the email failed: ${result.error}`;
+      ? `Request logged and an invitation was emailed to ${person.email}.`
+      : `Request logged, but the invitation email failed: ${result.error}`;
   }
 
   revalidatePath(`/industry/${industryId}`);

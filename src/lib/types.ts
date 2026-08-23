@@ -19,6 +19,7 @@ export interface Profile {
 
 export interface IndustryProfile {
   id: string;
+  user_id: string | null; // set once the professional signs in themselves
   full_name: string;
   designation: string | null;
   company: string | null;
@@ -29,7 +30,7 @@ export interface IndustryProfile {
   domains: string[];
   min_cost: number | null;
   notes: string | null;
-  added_by: string;
+  added_by: string | null;
   created_at: string;
 }
 

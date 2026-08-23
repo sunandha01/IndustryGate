@@ -27,6 +27,7 @@ create table profiles (
 -- ── Industry contacts (manually entered — industry people don't use the app) ─
 create table industry_profiles (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid unique references auth.users (id) on delete set null,  -- set when they sign in themselves
   full_name text not null,
   designation text,
   company text,
@@ -37,7 +38,7 @@ create table industry_profiles (
   domains text[] not null default '{}',
   min_cost numeric,            -- minimum they charge, if known
   notes text,
-  added_by uuid not null references profiles (id) on delete set null,
+  added_by uuid references profiles (id) on delete set null,  -- null when self-registered
   created_at timestamptz not null default now()
 );
 
@@ -98,7 +99,40 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  claimed uuid;
 begin
+  -- Industry professionals sign up through their own page, which sets
+  -- account_type='industry'. They are not bound to the srmist.edu.in domain.
+  if coalesce(new.raw_user_meta_data->>'account_type', 'campus') = 'industry' then
+    -- Claim the contact row faculty already created for this email, if any,
+    -- so their event history and requests carry over.
+    -- Exactly one row: two contacts can share an email, and claiming both
+    -- would set the same user_id twice and trip its unique constraint.
+    update public.industry_profiles
+       set user_id = new.id
+     where id = (
+       select id
+         from public.industry_profiles
+        where lower(email) = lower(new.email)
+          and user_id is null
+        order by created_at
+        limit 1
+     )
+    returning id into claimed;
+
+    if claimed is null then
+      insert into public.industry_profiles (user_id, full_name, email)
+      values (
+        new.id,
+        coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+        new.email
+      );
+    end if;
+
+    return new;
+  end if;
+
   if new.email !~* '@srmist\.edu\.in$' then
     raise exception 'Only @srmist.edu.in accounts can sign up';
   end if;
@@ -149,6 +183,17 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'faculty');
 $$;
 
+-- A campus account (student or faculty) as opposed to an industry professional.
+create or replace function public.is_campus()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid());
+$$;
+
+create or replace function public.my_industry_id()
+returns uuid language sql stable security definer set search_path = public as $$
+  select id from public.industry_profiles where user_id = auth.uid();
+$$;
+
 -- Why: the whole point of this portal is that reaching out isn't limited to
 -- "whoever has the contact" — but it's still gated to faculty and the
 -- club members a faculty member has explicitly authorized, not every student.
@@ -170,21 +215,29 @@ alter table requirements enable row level security;
 -- profiles: everyone signed in can browse the directory; you can only edit
 -- your own row, and guard_profile_privileged_fields() strips any privilege
 -- escalation out of that update before it lands.
-create policy "profiles_select" on profiles for select to authenticated using (true);
+-- Campus-only: an industry professional has no business reading the
+-- student/faculty directory (phone numbers, departments, and so on).
+create policy "profiles_select" on profiles for select to authenticated using (is_campus());
 create policy "profiles_update_own" on profiles for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
 
 -- industry_profiles: anyone can read; only faculty/authorized club members
 -- can add, and only the person who added it (or faculty) can edit/remove.
-create policy "industry_profiles_select" on industry_profiles for select to authenticated using (true);
+-- Campus users browse the directory; a professional sees only their own row.
+create policy "industry_profiles_select" on industry_profiles for select to authenticated
+  using (is_campus() or user_id = auth.uid());
 create policy "industry_profiles_insert" on industry_profiles for insert to authenticated
   with check (added_by = auth.uid() and can_post());
+-- The `with check` stops a professional reassigning their row to another account.
 create policy "industry_profiles_update" on industry_profiles for update to authenticated
-  using (added_by = auth.uid() or is_faculty());
+  using (is_faculty() or added_by = auth.uid() or user_id = auth.uid())
+  with check (is_campus() or user_id = auth.uid());
 create policy "industry_profiles_delete" on industry_profiles for delete to authenticated
   using (added_by = auth.uid() or is_faculty());
 
-create policy "industry_requests_select" on industry_requests for select to authenticated using (true);
+-- A professional sees the requests addressed to them, and nobody else's.
+create policy "industry_requests_select" on industry_requests for select to authenticated
+  using (is_campus() or industry_id = my_industry_id());
 create policy "industry_requests_insert" on industry_requests for insert to authenticated
   with check (logged_by = auth.uid() and can_post());
 create policy "industry_requests_update" on industry_requests for update to authenticated
@@ -208,3 +261,70 @@ create policy "requirements_update" on requirements for update to authenticated
   using (posted_by = auth.uid() or is_faculty());
 create policy "requirements_delete" on requirements for delete to authenticated
   using (posted_by = auth.uid() or is_faculty());
+
+-- The professional answers a request raised by faculty.
+--
+-- When the professional answers a request we now email the faculty member who
+-- raised it. An industry account cannot read `profiles` (RLS is_campus()), so
+-- the SECURITY DEFINER function hands back just the two fields needed for that
+-- one email rather than opening the table up.
+--
+create function public.respond_to_request(
+  request_id uuid,
+  new_status request_status
+)
+returns table (
+  r_domain text,
+  r_event_name text,
+  r_amount numeric,
+  r_email text,
+  r_full_name text,
+  r_faculty_email text,
+  r_faculty_name text
+)
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  req public.industry_requests;
+  mine uuid;
+begin
+  select id into mine from public.industry_profiles where user_id = auth.uid();
+  if mine is null then
+    raise exception 'Only the industry professional can answer a request';
+  end if;
+
+  select * into req from public.industry_requests where id = request_id;
+  if req.id is null or req.industry_id <> mine then
+    raise exception 'Request not found';
+  end if;
+  if req.status <> 'sent' then
+    raise exception 'This request has already been answered';
+  end if;
+
+  update public.industry_requests set status = new_status where id = request_id;
+
+  if new_status = 'accepted' then
+    insert into public.requirements
+      (posted_by, domain, offer_amount, description, status, fulfilled_by)
+    values (
+      req.logged_by,            -- credited to the faculty member who raised it
+      req.domain,
+      req.amount,
+      coalesce('Confirmed for ' || req.event_name, 'Confirmed from an industry request'),
+      'fulfilled',
+      mine
+    );
+  end if;
+
+  return query
+    select req.domain, req.event_name, req.amount,
+           ip.email, ip.full_name,
+           p.email, p.full_name
+      from public.industry_profiles ip
+      join public.profiles p on p.id = req.logged_by
+     where ip.id = mine;
+end;
+$$;
+
+grant execute on function public.respond_to_request(uuid, request_status) to authenticated;
