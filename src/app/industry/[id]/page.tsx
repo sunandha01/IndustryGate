@@ -156,6 +156,9 @@ export default async function IndustryProfilePage({
                   {ask.event_name && (
                     <p className="text-sm text-gray-600">For: {ask.event_name}</p>
                   )}
+                  {ask.start_date && (
+                    <p className="text-sm text-gray-600">{dateRange(ask.start_date, ask.end_date)}</p>
+                  )}
                   {money(ask.amount) && (
                     <p className="text-sm text-gray-600">{money(ask.amount)}</p>
                   )}
@@ -165,6 +168,9 @@ export default async function IndustryProfilePage({
                 {/* Answering is the professional's call, on their own profile. */}
                 {ask.status === "sent" && (
                   <p className="text-xs text-gray-400 shrink-0">Awaiting their reply</p>
+                )}
+                {ask.status === "withdrawn" && (
+                  <p className="text-xs text-gray-400 shrink-0">No longer needed</p>
                 )}
               </div>
             </Card>

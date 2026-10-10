@@ -194,6 +194,10 @@ export default async function MentorProfilePage({
                   <dl className="mt-4 pt-4 border-t border-card-border grid sm:grid-cols-2 gap-3 text-sm">
                     <Field label="Domain" value={ask.domain} />
                     <Field label="Event" value={ask.event_name} />
+                    <Field
+                      label="Dates"
+                      value={ask.start_date ? dateRange(ask.start_date, ask.end_date) : null}
+                    />
                     <Field label="Amount" value={money(ask.amount)} />
                     <Field label="Status" value={ask.status} />
                     <div className="sm:col-span-2">
@@ -206,6 +210,13 @@ export default async function MentorProfilePage({
                       />
                     </div>
                   </dl>
+
+                  {ask.status === "withdrawn" && (
+                    <p className="mt-4 pt-4 border-t border-card-border text-xs text-gray-500">
+                      SRM no longer needs this. The event was filled or closed, so there is nothing
+                      to answer.
+                    </p>
+                  )}
 
                   {ask.status === "sent" && (
                     <div className="mt-4 pt-4 border-t border-card-border flex items-center gap-2">

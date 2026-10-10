@@ -6,6 +6,7 @@ import {
   buildMentorSignals,
   prepareMentors,
   rankMentors,
+  validateEventForRequest,
 } from "../src/lib/mentor-match.ts";
 
 const profile = (id, name, extra = {}) => ({
@@ -134,6 +135,35 @@ for (const i of r.items) {
   assert.ok(i.tagline[0] === i.tagline[0].toUpperCase(), "tagline starts capitalised");
 }
 assert.ok(r.items[0].tagline.includes(","), "tagline is comma separated");
+
+// ── the event name is read too ──
+r = run({ name: "National Robotics Challenge", domain: "Hackathon" });
+assert.equal(r.state, "ok");
+assert.ok(names(r).includes("rob1"), "a robotics event name finds the robotics mentor even when the domain says only 'Hackathon'");
+
+// ── Send-request gate: what must be filled in, and the message when it is not ──
+const full = { name: "Hackfest 2026", domain: "AI", description: "Hackathon", startDate: "2026-11-10", endDate: "2026-11-12", offer: 5000 };
+assert.equal(validateEventForRequest(full), null, "a complete event can be sent");
+assert.equal(validateEventForRequest({ ...full, offer: 0 }), null, "a fee of zero is still a fee");
+assert.equal(
+  validateEventForRequest({ name: "", domain: "", description: "", startDate: "", endDate: "", offer: null }),
+  "Add event name, domain, start date, end date, fee offered and description to send a request",
+  "everything missing is listed"
+);
+assert.equal(validateEventForRequest({ ...full, endDate: "", offer: null }), "Add end date and fee offered to send a request", "names exactly what is missing");
+assert.equal(validateEventForRequest({ ...full, name: "  " }), "Add event name to send a request", "a blank event name does not count");
+assert.equal(validateEventForRequest({ ...full, description: "   " }), "Add description to send a request", "whitespace does not count as filled");
+assert.equal(validateEventForRequest({ ...full, startDate: "2026-11-12", endDate: "2026-11-10" }), "The end date is before the start date");
+assert.equal(validateEventForRequest({ ...full, startDate: "not-a-date" }), "Enter valid start and end dates");
+assert.equal(validateEventForRequest({ ...full, offer: -5 }), "The fee can't be negative");
+assert.equal(validateEventForRequest({ ...full, sponsorship: "", prize: null }), null, "sponsorship and prize pool stay optional");
+
+// ── the Send button needs to know who can actually be emailed ──
+r = run({ domain: "Machine Learning" });
+assert.equal(r.items.find((i) => i.id === "ai1").hasEmail, true);
+const noMail = buildMentorSignals([profile("nm", "No Mail", { domains: ["AI"], email: "  " })], [], [], []);
+const nm = rankMentors(prepareMentors(noMail), analyzeEvent({ ...base, domain: "AI" }));
+assert.equal(nm.items[0].hasEmail, false, "a blank email counts as no email");
 
 // ── robustness ──
 assert.doesNotThrow(() => run({ domain: "AI", startDate: "garbage", endDate: "2026-02-31" }));

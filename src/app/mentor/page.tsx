@@ -35,7 +35,7 @@ export default async function MentorFeedPage() {
                   <div>
                     <Badge>{req.domain}</Badge>
                     <h2 className="mt-2 font-semibold text-srm-navy">
-                      {req.description?.split("\n")[0] || `${req.domain} opportunity`}
+                      {req.event_name || req.description?.split("\n")[0] || `${req.domain} opportunity`}
                     </h2>
                     <p className="text-xs text-gray-400 mt-1">
                       {dateRange(req.start_date, req.end_date)}

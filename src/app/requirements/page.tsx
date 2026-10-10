@@ -4,7 +4,12 @@ import { Badge, Card, EmptyState, NewButton, PageHeader, dateRange, money } from
 import type { IndustryProfile, Requirement } from "@/lib/types";
 import { closeRequirement } from "./actions";
 
-export default async function RequirementsPage() {
+export default async function RequirementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -35,6 +40,12 @@ export default async function RequirementsPage() {
         action={<NewButton href="/requirements/new" label="Post a requirement" />}
       />
 
+      {error && (
+        <p className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3">
+          Couldn&apos;t close that requirement: {error}
+        </p>
+      )}
+
       {requirements.length === 0 && (
         <EmptyState message="No open requirements. Post what an upcoming event still needs." />
       )}
@@ -54,7 +65,8 @@ export default async function RequirementsPage() {
                   </form>
                 )}
               </div>
-              <h2 className="mt-2 font-semibold text-srm-navy">{req.domain}</h2>
+              <h2 className="mt-2 font-semibold text-srm-navy">{req.event_name ?? req.domain}</h2>
+              {req.event_name && <p className="text-xs text-gray-500">{req.domain}</p>}
               {req.description && <p className="text-sm text-gray-600 mt-1">{req.description}</p>}
               {filler && (
                 <p className="text-sm text-gray-600 mt-1">

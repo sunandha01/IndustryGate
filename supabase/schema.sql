@@ -5,7 +5,7 @@ create extension if not exists "pgcrypto";
 
 create type user_role as enum ('student', 'faculty');
 create type requirement_status as enum ('open', 'fulfilled', 'closed');
-create type request_status as enum ('sent', 'accepted', 'rejected');
+create type request_status as enum ('sent', 'accepted', 'rejected', 'withdrawn');
 
 -- ── Profiles (students & faculty) ──────────────────────────────────────────
 -- One row per auth.users row, created automatically by handle_new_user().
@@ -79,6 +79,7 @@ create table past_events (
 create table requirements (
   id uuid primary key default gen_random_uuid(),
   posted_by uuid not null references profiles (id) on delete cascade,
+  event_name text,             -- what people recognise it as; older rows fall back to the domain
   domain text not null,
   start_date date,
   end_date date,
@@ -90,6 +91,19 @@ create table requirements (
   fulfilled_by uuid references industry_profiles (id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+-- A request is raised for one requirement (the event). Accepting it fills that
+-- same requirement instead of creating a second one. Standalone requests (logged
+-- from a mentor's profile) leave requirement_id null.
+alter table industry_requests
+  add column requirement_id uuid references requirements (id) on delete set null,
+  add column start_date date,
+  add column end_date date;
+
+-- At most one request per mentor per event, so a retry can never email twice.
+create unique index industry_requests_one_per_event
+  on industry_requests (requirement_id, industry_id)
+  where requirement_id is not null;
 
 -- ── Sign-up gate + auto profile creation ────────────────────────────────────
 -- Why: only srmist.edu.in accounts should ever get a profile — this is the
@@ -262,13 +276,30 @@ create policy "requirements_update" on requirements for update to authenticated
 create policy "requirements_delete" on requirements for delete to authenticated
   using (posted_by = auth.uid() or is_faculty());
 
+-- When a requirement stops being open (a mentor accepted, or someone closed it),
+-- anyone still waiting on a reply is told it is no longer needed. SECURITY
+-- DEFINER because the person closing it does not own every request.
+create or replace function public.withdraw_pending_requests()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if old.status = 'open' and new.status <> 'open' then
+    update public.industry_requests
+       set status = 'withdrawn'
+     where requirement_id = new.id
+       and status = 'sent';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger requirement_leaves_open
+  after update of status on requirements
+  for each row execute function public.withdraw_pending_requests();
+
 -- The professional answers a request raised by faculty.
---
--- When the professional answers a request we now email the faculty member who
--- raised it. An industry account cannot read `profiles` (RLS is_campus()), so
--- the SECURITY DEFINER function hands back just the two fields needed for that
--- one email rather than opening the table up.
---
 create function public.respond_to_request(
   request_id uuid,
   new_status request_status
@@ -288,6 +319,7 @@ as $$
 declare
   req public.industry_requests;
   mine uuid;
+  filled uuid;
 begin
   select id into mine from public.industry_profiles where user_id = auth.uid();
   if mine is null then
@@ -298,24 +330,43 @@ begin
   if req.id is null or req.industry_id <> mine then
     raise exception 'Request not found';
   end if;
+  if req.status = 'withdrawn' then
+    raise exception 'This opportunity is no longer available';
+  end if;
   if req.status <> 'sent' then
     raise exception 'This request has already been answered';
   end if;
 
-  update public.industry_requests set status = new_status where id = request_id;
-
   if new_status = 'accepted' then
-    insert into public.requirements
-      (posted_by, domain, offer_amount, description, status, fulfilled_by)
-    values (
-      req.logged_by,            -- credited to the faculty member who raised it
-      req.domain,
-      req.amount,
-      coalesce('Confirmed for ' || req.event_name, 'Confirmed from an industry request'),
-      'fulfilled',
-      mine
-    );
+    if req.requirement_id is not null then
+      -- Fill the posted requirement in place. The `status = 'open'` guard makes
+      -- this atomic: if two mentors accept at once, exactly one gets it.
+      update public.requirements
+         set status = 'fulfilled', fulfilled_by = mine
+       where id = req.requirement_id and status = 'open'
+      returning id into filled;
+
+      if filled is null then
+        raise exception 'This opportunity has already been filled or closed';
+      end if;
+    else
+      -- Standalone request: no posted requirement exists, so record one.
+      insert into public.requirements
+        (posted_by, domain, offer_amount, description, status, fulfilled_by)
+      values (
+        req.logged_by,
+        req.domain,
+        req.amount,
+        coalesce('Confirmed for ' || req.event_name, 'Confirmed from an industry request'),
+        'fulfilled',
+        mine
+      );
+    end if;
   end if;
+
+  -- Set last: the trigger above withdraws every pending request for the event,
+  -- including this one, so this write has to win.
+  update public.industry_requests set status = new_status where id = request_id;
 
   return query
     select req.domain, req.event_name, req.amount,

@@ -53,6 +53,12 @@ export default async function NewRequirementPage({
             </p>
           )}
           <form action={createRequirement} className="flex flex-col gap-4">
+            {/* Filled in by the mentor suggestions once a request has posted this event. */}
+            <input type="hidden" name="requirement_id" />
+            {formField(
+              "Event name",
+              <input name="event_name" required className={inputClass} placeholder="Smart India Hackathon 2026" />
+            )}
             {formField(
               "Domain",
               <input name="domain" required className={inputClass} placeholder="AI/ML, Web Dev, Robotics..." />

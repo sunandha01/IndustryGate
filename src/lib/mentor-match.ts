@@ -37,12 +37,14 @@ export interface MentorSignal {
 }
 
 export interface EventInput {
+  name?: string; // what the event is called; helps matching and titles the request
   domain: string;
   description: string;
   sponsorship: string;
   startDate: string; // yyyy-mm-dd or ""
   endDate: string;
   offer: number | null; // what the college is offering the mentor
+  prize?: number | null; // not used for ranking; carried so a request can save the whole event
 }
 
 export interface Recommendation {
@@ -53,6 +55,7 @@ export interface Recommendation {
   domains: string[];
   minCost: number | null;
   eventCount: number;
+  hasEmail: boolean;
   score: number; // 0-100
   tagline: string;
   cautions: string[];
@@ -320,7 +323,7 @@ export interface EventProfile {
 
 export function analyzeEvent(input: EventInput): EventProfile {
   const dom = extract(input.domain);
-  const txt = extract(`${input.description} ${input.sponsorship}`);
+  const txt = extract(`${input.name ?? ""} ${input.description} ${input.sponsorship}`);
 
   const units: Unit[] = [];
   for (const key of dom.concepts) units.push({ type: "concept", key, weight: 1 });
@@ -331,7 +334,7 @@ export function analyzeEvent(input: EventInput): EventProfile {
 
   const secondary = [...txt.concepts].filter((c) => !dom.concepts.has(c));
 
-  const roleText = norm(`${input.domain} ${input.description}`);
+  const roleText = norm(`${input.name ?? ""} ${input.domain} ${input.description}`);
   const roles = new Set<Role>();
   for (const [role, re] of ROLE_WORDS) if (re.test(roleText)) roles.add(role);
   // Asking for sponsorship means they want a sponsor, whatever the description says.
@@ -606,6 +609,7 @@ function recommend(p: Prepared, ev: EventProfile): Recommendation | null {
     domains: p.m.domains,
     minCost: p.m.minCost,
     eventCount: p.events.length,
+    hasEmail: p.m.hasEmail,
     score,
     tagline: tagline(p, ev, similar, domain),
     cautions: cautions(p, ev, clash?.label),
@@ -699,6 +703,42 @@ function cautions(p: Prepared, ev: EventProfile, clashWith: string | undefined):
   }
   if (!p.m.hasEmail) out.push("No email on file, so a request can't be emailed yet");
   return out;
+}
+
+// ── Sending a request ───────────────────────────────────────────────────────
+
+// A request goes to a real person, so it must carry everything they need to
+// decide: what, when, and for how much. Sponsorship and prize pool stay optional
+// since plenty of events have neither. Used by the browser (to say exactly what
+// is missing) and by the server (to enforce it), so the two cannot disagree.
+export function validateEventForRequest(e: {
+  name?: string;
+  domain: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  offer: number | null;
+}): string | null {
+  const missing: string[] = [];
+  if (!(e.name ?? "").trim()) missing.push("event name");
+  if (!e.domain.trim()) missing.push("domain");
+  if (!e.startDate) missing.push("start date");
+  if (!e.endDate) missing.push("end date");
+  if (e.offer === null) missing.push("fee offered");
+  if (!e.description.trim()) missing.push("description");
+
+  if (missing.length) {
+    const last = missing.pop() as string;
+    const list = missing.length ? `${missing.join(", ")} and ${last}` : last;
+    return `Add ${list} to send a request`;
+  }
+
+  const start = parseDay(e.startDate);
+  const end = parseDay(e.endDate);
+  if (start === null || end === null) return "Enter valid start and end dates";
+  if (end < start) return "The end date is before the start date";
+  if (e.offer !== null && (!Number.isFinite(e.offer) || e.offer < 0)) return "The fee can't be negative";
+  return null;
 }
 
 // ── Public entry point ──────────────────────────────────────────────────────

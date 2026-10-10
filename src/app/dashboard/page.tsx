@@ -61,7 +61,12 @@ export default async function DashboardPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <Badge>Wanted · {item.data.status}</Badge>
-                  <h2 className="mt-2 font-semibold text-srm-navy">{item.data.domain}</h2>
+                  <h2 className="mt-2 font-semibold text-srm-navy">
+                    {item.data.event_name ?? item.data.domain}
+                  </h2>
+                  {item.data.event_name && (
+                    <p className="text-xs text-gray-500">{item.data.domain}</p>
+                  )}
                   {item.data.description && (
                     <p className="text-sm text-gray-600 mt-1">{item.data.description}</p>
                   )}

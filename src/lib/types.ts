@@ -1,6 +1,6 @@
 export type UserRole = "student" | "faculty";
 export type RequirementStatus = "open" | "fulfilled" | "closed";
-export type RequestStatus = "sent" | "accepted" | "rejected";
+export type RequestStatus = "sent" | "accepted" | "rejected" | "withdrawn";
 
 export interface Profile {
   id: string;
@@ -43,6 +43,9 @@ export interface IndustryRequest {
   amount: number | null;
   notes: string | null;
   status: RequestStatus;
+  requirement_id: string | null; // the posted event this was raised for, if any
+  start_date: string | null;
+  end_date: string | null;
   created_at: string;
 }
 
@@ -66,6 +69,7 @@ export interface PastEvent {
 export interface Requirement {
   id: string;
   posted_by: string;
+  event_name: string | null; // older rows have none; show the domain instead
   domain: string;
   start_date: string | null;
   end_date: string | null;

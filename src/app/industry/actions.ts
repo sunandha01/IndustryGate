@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sendEmail, siteUrl } from "@/lib/email";
+import { invitationEmail, sendEmail } from "@/lib/email";
 
 const text = (value: FormDataEntryValue | null) => {
   const s = String(value ?? "").trim();
@@ -142,20 +142,17 @@ export async function logIndustryRequest(industryId: string, formData: FormData)
   if (!person?.email) {
     notice = "Request logged. No email on file for this contact, so nothing was sent.";
   } else {
-    const result = await sendEmail(
-      person.email,
-      `SRM invitation — ${eventName ?? domain}`,
-      `<p>Dear ${person.full_name},</p>
-       <p>${facultyName} of SRM Institute of Science &amp; Technology would like to invite you
-       to take part in <strong>${eventName ?? `an event in the ${domain} domain`}</strong>.</p>
-       <p>Domain: <strong>${domain}</strong></p>
-       ${amount !== null ? `<p>Offered amount: <strong>₹${amount}</strong></p>` : ""}
-       ${notes ? `<p>${notes}</p>` : ""}
-       <p>You can accept or decline this invitation here:<br/>
-       <a href="${siteUrl()}/mentor/profile">${siteUrl()}/mentor/profile</a></p>
-       <p>Sign in with this email address to see the full details under “Requests”.</p>
-       <p>Warm regards,<br/>SRM Industry Mentor Portal</p>`
-    );
+    const mail = invitationEmail({
+      personName: person.full_name,
+      facultyName,
+      domain,
+      eventName,
+      amount,
+      notes,
+      startDate: null, // requests logged from this page have no event dates
+      endDate: null,
+    });
+    const result = await sendEmail(person.email, mail.subject, mail.html);
 
     notice = result.ok
       ? `Request logged and an invitation was emailed to ${person.email}.`
